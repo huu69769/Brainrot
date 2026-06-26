@@ -200,7 +200,7 @@ async function startProcessing(file) {
   statusSection.classList.remove('hidden');
 
   setProgress(0);
-  setStatus('初始化...');
+  setStatus('initialising...');
 
   const baseInterval = FREQ_MAP[parseInt(freqSlider.value, 10)] ?? 6;
   const keepRatio = keepRatioCb.checked;
@@ -218,12 +218,12 @@ async function startProcessing(file) {
     previewVideo.src = url;
     resultSection.classList.remove('hidden');
     playSfx('complete');
-    setStatus('✅ 处理完成！');
+    setStatus('✅ done!');
     setProgress(1);
 
   } catch (err) {
     console.error(err);
-    setStatus('❌ 处理失败: ' + err.message);
+    setStatus('❌ failed: ' + err.message);
   } finally {
     isProcessing = false;
     uploadBtn.disabled = false;

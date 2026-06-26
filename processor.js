@@ -50,7 +50,7 @@ export async function processVideo(videoFile, emojiPaths, musicPaths, opts = {})
     onStatus = () => {},
   } = opts;
 
-  onStatus('加载 ffmpeg.wasm…');
+  onStatus('loading ffmpeg.wasm…');
   onProgress(0.02);
   const ff = await loadFFmpeg();
 
@@ -59,16 +59,16 @@ export async function processVideo(videoFile, emojiPaths, musicPaths, opts = {})
   });
 
   // ── Write input video ────────────────────────────────────
-  onStatus('读取视频文件…');
+  onStatus('reading video file…');
   onProgress(0.05);
   const ext = (videoFile.name.split('.').pop() || 'mp4').toLowerCase();
   const inputName = `input.${ext}`;
   ff.writeFile(inputName, await fetchFile(videoFile));
 
   // ── Probe video ──────────────────────────────────────────
-  onStatus('分析视频…');
+  onStatus('analysing video…');
   const { duration, width: srcW, height: srcH, hasAudio } = await probeMedia(ff, inputName);
-  onStatus(`${duration.toFixed(1)}s · ${srcW}×${srcH} · 音频:${hasAudio ? '✓' : '✗'}`);
+  onStatus(`${duration.toFixed(1)}s · ${srcW}×${srcH} · audio:${hasAudio ? '✓' : '✗'}`);
   onProgress(0.08);
 
   // ── Output dimensions ────────────────────────────────────
@@ -85,7 +85,7 @@ export async function processVideo(videoFile, emojiPaths, musicPaths, opts = {})
   }
 
   // ── 预先探测所有音乐时长，用于计算真实间隔 ─────────────────
-  onStatus('探测音乐时长…');
+  onStatus('probing music duration…');
   onProgress(0.10);
 
   // 加载最多 8 段素材备用（足够覆盖任何长度视频）
@@ -152,14 +152,14 @@ export async function processVideo(videoFile, emojiPaths, musicPaths, opts = {})
     segments.push({ type: 'normal', start: videoPos, duration: duration - videoPos });
   }
 
-  onStatus(`${slotIdx} 处定格效果`);
+  onStatus(`${slotIdx} freeze effect(s)`);
 
   // ── Encode each segment ──────────────────────────────────
   const segFiles = [];
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i];
     const out = `seg_${i}.mp4`;
-    onStatus(`编码片段 ${i + 1}/${segments.length}…`);
+    onStatus(`encoding segment ${i + 1}/${segments.length}…`);
     if (seg.type === 'normal') {
       await encodeNormal(ff, inputName, seg, out, outW, outH, keepRatio, srcW, srcH, hasAudio);
     } else {
@@ -179,7 +179,7 @@ export async function processVideo(videoFile, emojiPaths, musicPaths, opts = {})
   }
 
   // ── Concat ───────────────────────────────────────────────
-  onStatus('拼接所有片段…');
+  onStatus('concatenating segments…');
   ff.writeFile('concat.txt', segFiles.map(f => `file '${f}'`).join('\n'));
 
   await execFF(ff, [
@@ -190,7 +190,7 @@ export async function processVideo(videoFile, emojiPaths, musicPaths, opts = {})
   ]);
 
   // ── Read result ──────────────────────────────────────────
-  onStatus('读取输出…');
+  onStatus('reading output…');
   onProgress(0.97);
   const data = await ff.readFile('output.mp4');
   const blob = new Blob([data.buffer], { type: 'video/mp4' });
@@ -200,7 +200,7 @@ export async function processVideo(videoFile, emojiPaths, musicPaths, opts = {})
   const toDelete = [inputName, 'concat.txt', 'output.mp4', ...segFiles, ...emojiFiles, ...musicFiles, ...frameFiles];
   for (const f of toDelete) { try { ff.deleteFile(f); } catch (_) {} }
 
-  onStatus('✅ 完成！');
+  onStatus('✅ done!');
   onProgress(1.0);
   return blob;
 }
