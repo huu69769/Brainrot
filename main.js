@@ -11,6 +11,7 @@ const emojiModules = import.meta.glob('/assets/emojis/*.{png,jpg,jpeg,gif,webp}'
 const musicModules = import.meta.glob('/assets/music/*.{wav,mp3,ogg,m4a}', { eager: true, query: '?url', import: 'default' });
 const sfxModules   = import.meta.glob('/assets/sfx/*.{wav,mp3,ogg}', { eager: true, query: '?url', import: 'default' });
 const decorModules = import.meta.glob('/assets/decor/*.{svg,png,jpg,jpeg,gif,webp}', { eager: true, query: '?url', import: 'default' });
+const bgmModules   = import.meta.glob('/assets/bgm/*.{wav,mp3,ogg,m4a}', { eager: true, query: '?url', import: 'default' });
 
 const EMOJIS = Object.values(emojiModules);
 const MUSIC  = Object.values(musicModules);
@@ -38,11 +39,44 @@ const downloadBtn   = document.getElementById('download-btn');
 const jumpscareEl   = document.getElementById('jumpscare');
 const jumpscareImg  = document.getElementById('jumpscare-img');
 const decorLayer    = document.getElementById('decor-layer');
+const introOverlay  = document.getElementById('intro-overlay');
+const introClose    = document.getElementById('intro-close');
+const bgmBtn        = document.getElementById('bgm-btn');
 
 // ── State ─────────────────────────────────────────────────
 
 let outputBlob = null;
 let isProcessing = false;
+
+// ── BGM ───────────────────────────────────────────────────
+
+const BGM = Object.values(bgmModules);
+let bgmAudio = null;
+
+function startBgm() {
+  if (BGM.length === 0) return;
+  const src = BGM[Math.floor(Math.random() * BGM.length)];
+  bgmAudio = new Audio(src);
+  bgmAudio.volume = 0.15;
+  bgmAudio.loop = true;
+  bgmAudio.play().catch(() => {});
+  bgmBtn.classList.remove('hidden');
+  bgmBtn.textContent = '🔊 BGM';
+}
+
+bgmBtn.addEventListener('click', () => {
+  if (!bgmAudio) return;
+  bgmAudio.muted = !bgmAudio.muted;
+  bgmBtn.textContent = bgmAudio.muted ? '🔇 BGM' : '🔊 BGM';
+  bgmBtn.classList.toggle('muted', bgmAudio.muted);
+});
+
+// ── Intro popup ───────────────────────────────────────────
+
+introClose.addEventListener('click', () => {
+  introOverlay.classList.add('gone');
+  startBgm();
+});
 
 // ── Frequency map ─────────────────────────────────────────
 
