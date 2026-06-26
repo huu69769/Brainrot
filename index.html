@@ -7,7 +7,33 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <!-- Brainrot decor layer (populated from assets/decor/ by JS) -->
+
+  <!-- SVG filter for wobbly hand-drawn border -->
+  <svg style="display:none" aria-hidden="true">
+    <filter id="wobbly" x="-5%" y="-5%" width="110%" height="110%">
+      <feTurbulence type="turbulence" baseFrequency="0.032" numOctaves="2" result="noise" seed="7"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="5" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </svg>
+
+  <!-- Intro popup -->
+  <div id="intro-overlay">
+    <div id="intro-box">
+      <button id="intro-close" aria-label="close">✕</button>
+      <h2 id="intro-title">PHONK MEME MACHINE 💀</h2>
+      <div id="intro-body">
+        <p>upload a video. something happens. don't ask.</p>
+        <p>we are not responsible for what comes out.</p>
+        <p>⚠️ volume warning. you'll see. or hear. whatever.</p>
+        <p class="intro-last">enjoy!&nbsp;&nbsp;<span class="intro-muted">(you won't)</span></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- BGM mute button (shown after popup closes) -->
+  <button id="bgm-btn" class="hidden" aria-label="toggle background music">🔊 BGM</button>
+
+  <!-- Brainrot decor layer -->
   <div id="decor-layer" aria-hidden="true"></div>
 
   <!-- Jump-scare overlay -->
@@ -26,9 +52,7 @@
     </header>
 
     <main>
-      <!-- Controls -->
       <section class="controls-section">
-        <!-- Upload -->
         <div class="control-group">
           <button id="upload-btn" class="btn-upload" type="button">
             📁 UPLOAD VIDEO
@@ -36,7 +60,6 @@
           <input id="file-input" type="file" accept="video/*" hidden />
         </div>
 
-        <!-- Frequency slider -->
         <div class="control-group">
           <label for="freq-slider" class="ctrl-label">💥 梗的密度</label>
           <div class="slider-wrap">
@@ -51,7 +74,6 @@
           </div>
         </div>
 
-        <!-- Keep ratio checkbox -->
         <div class="control-group">
           <label class="checkbox-label">
             <input id="keep-ratio" type="checkbox" />
@@ -61,7 +83,6 @@
         </div>
       </section>
 
-      <!-- Processing status -->
       <section id="status-section" class="status-section hidden">
         <div class="progress-bar-wrap">
           <div id="progress-bar" class="progress-bar"></div>
@@ -69,7 +90,6 @@
         <p id="status-text" class="status-text">准备中...</p>
       </section>
 
-      <!-- Preview + download -->
       <section id="result-section" class="result-section hidden">
         <video id="preview-video" controls playsinline></video>
         <button id="download-btn" class="btn-download" type="button">

@@ -366,6 +366,97 @@ footer {
 /* ── Utility ── */
 .hidden { display: none !important; }
 
+/* ── Intro popup ── */
+#intro-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(2px);
+}
+#intro-overlay.gone {
+  display: none;
+}
+
+#intro-box {
+  position: relative;
+  background: #f2ead8;
+  border: 3px solid #111;
+  padding: 2.2rem 2.4rem 1.8rem;
+  max-width: min(88vw, 420px);
+  width: 100%;
+  filter: url(#wobbly);
+  /* slight tilt for that torn-paper feel */
+  transform: rotate(-0.6deg);
+  box-shadow: 6px 8px 0 #111;
+}
+
+#intro-close {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.8rem;
+  background: none;
+  border: none;
+  font-size: 1.1rem;
+  font-family: monospace;
+  font-weight: 900;
+  color: #111;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0.2rem 0.4rem;
+}
+#intro-close:hover { opacity: 0.5; }
+
+#intro-title {
+  font-family: 'Black Ops One', 'Arial Black', sans-serif;
+  font-size: clamp(1.2rem, 5vw, 1.6rem);
+  color: #111;
+  margin: 0 0 1.2rem;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+}
+
+#intro-body {
+  font-family: 'Helvetica Neue', Arial, sans-serif;
+  font-size: clamp(0.88rem, 3vw, 1rem);
+  color: #222;
+  line-height: 1.75;
+}
+#intro-body p { margin: 0 0 0.5rem; }
+#intro-body p:last-child { margin-bottom: 0; }
+
+.intro-last {
+  margin-top: 1rem !important;
+  font-weight: 700;
+}
+.intro-muted {
+  color: #666;
+  font-weight: 400;
+}
+
+/* ── BGM mute button ── */
+#bgm-btn {
+  position: fixed;
+  bottom: 1.2rem;
+  right: 1.2rem;
+  z-index: 9000;
+  background: rgba(10,10,15,0.82);
+  border: 1px solid #333;
+  color: #aaa;
+  font-family: monospace;
+  font-size: 0.78rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 4px;
+  cursor: pointer;
+  letter-spacing: 0.05em;
+  transition: color 0.15s, border-color 0.15s;
+}
+#bgm-btn:hover { color: #fff; border-color: #666; }
+#bgm-btn.muted { color: #555; }
+
 /* ── Responsive tweaks ── */
 @media (max-width: 400px) {
   #app { padding: 1rem 0.75rem 2.5rem; }
