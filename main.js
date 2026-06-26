@@ -173,23 +173,21 @@ function triggerJumpscare(onDone) {
 uploadBtn.addEventListener('click', () => {
   if (isProcessing) return;
   playSfx('click');
-
-  // Open file picker immediately (mobile requires it in the same gesture)
   fileInput.click();
-
-  // 70% chance of jumpscare in parallel (does NOT block file picker)
-  if (Math.random() < 0.70) {
-    triggerJumpscare(null);
-  }
 });
 
 fileInput.addEventListener('change', (e) => {
   const file = e.target.files?.[0];
   if (!file) return;
-  playSfx('upload');
-  startProcessing(file);
-  // Reset input so the same file can be re-uploaded
   fileInput.value = '';
+  playSfx('upload');
+
+  // 70% chance of jumpscare before processing starts
+  if (Math.random() < 0.70) {
+    triggerJumpscare(() => startProcessing(file));
+  } else {
+    startProcessing(file);
+  }
 });
 
 // ── Processing orchestration ──────────────────────────────
