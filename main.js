@@ -7,7 +7,7 @@ import { processVideo } from './processor.js';
 // ── Asset discovery ───────────────────────────────────────
 
 // Vite's import.meta.glob to discover static assets at build time
-const emojiModules = import.meta.glob('/assets/emojis/*.{svg,png,jpg,jpeg,gif,webp}', { eager: true, query: '?url', import: 'default' });
+const emojiModules = import.meta.glob('/assets/emojis/*.{png,jpg,jpeg,gif,webp}', { eager: true, query: '?url', import: 'default' });
 const musicModules = import.meta.glob('/assets/music/*.{wav,mp3,ogg,m4a}', { eager: true, query: '?url', import: 'default' });
 const sfxModules   = import.meta.glob('/assets/sfx/*.{wav,mp3,ogg}', { eager: true, query: '?url', import: 'default' });
 const decorModules = import.meta.glob('/assets/decor/*.{svg,png,jpg,jpeg,gif,webp}', { eager: true, query: '?url', import: 'default' });

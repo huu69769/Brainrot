@@ -1,10 +1,13 @@
 /**
  * processor.js
- * Encapsulates ffmpeg.wasm video processing logic.
+ * ffmpeg.wasm video processing — slice → process → concat approach.
  *
- * Strategy: slice video into segments at freeze points, process each
- * freeze segment (grayscale + overlay emoji + replace audio with phonk),
- * then concat everything back. This guarantees audio/video sync.
+ * Key design decisions:
+ * - Each segment is encoded separately with identical codec params so
+ *   the final concat demuxer can copy streams without re-encoding.
+ * - ff.exec() does NOT throw on ffmpeg error; it returns the exit code.
+ *   We wrap it in execFF() which throws on non-zero so failures are caught.
+ * - Emoji overlay uses PNG (not SVG — ffmpeg.wasm has no SVG decoder).
  */
 
 import { FFmpeg } from '@ffmpeg/ffmpeg';
@@ -14,29 +17,30 @@ let ffmpeg = null;
 
 async function loadFFmpeg() {
   if (ffmpeg) return ffmpeg;
-
   ffmpeg = new FFmpeg();
-
-  // Load from CDN with crossOriginIsolated support
-  const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+  const base = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
   await ffmpeg.load({
-    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+    coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, 'text/javascript'),
+    wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm'),
   });
-
   return ffmpeg;
 }
 
+/** Throw if ffmpeg exits non-zero so failures are never silently swallowed. */
+async function execFF(ff, args) {
+  const code = await ff.exec(args);
+  if (code !== 0) {
+    throw new Error(`ffmpeg error (exit ${code}) for: ${args.slice(0, 6).join(' ')}…`);
+  }
+}
+
+// ── Public API ────────────────────────────────────────────
+
 /**
- * @param {File}     videoFile      - user's video file
- * @param {string[]} emojiPaths     - list of emoji asset paths to pick from
- * @param {string[]} musicPaths     - list of phonk audio asset paths to pick from
+ * @param {File}     videoFile
+ * @param {string[]} emojiPaths  - asset URLs (PNG)
+ * @param {string[]} musicPaths  - asset URLs (WAV/MP3)
  * @param {object}   opts
- * @param {number}   opts.baseInterval  - base seconds between freeze points
- * @param {boolean}  opts.keepRatio     - preserve original aspect ratio (else force 9:16)
- * @param {function} opts.onProgress    - progress callback (0..1)
- * @param {function} opts.onStatus      - status string callback
- * @returns {Promise<Blob>} processed mp4 blob
  */
 export async function processVideo(videoFile, emojiPaths, musicPaths, opts = {}) {
   const {
@@ -46,383 +50,287 @@ export async function processVideo(videoFile, emojiPaths, musicPaths, opts = {})
     onStatus = () => {},
   } = opts;
 
-  onStatus('加载 ffmpeg.wasm...');
+  onStatus('加载 ffmpeg.wasm…');
   onProgress(0.02);
-
   const ff = await loadFFmpeg();
 
   ff.on('progress', ({ progress }) => {
-    // progress events come from ffmpeg, map to 0.15–0.95 range
-    onProgress(0.15 + Math.min(progress, 1) * 0.8);
+    onProgress(0.15 + Math.min(Math.max(progress, 0), 1) * 0.76);
   });
 
-  onStatus('读取视频文件...');
+  // ── Write input video ────────────────────────────────────
+  onStatus('读取视频文件…');
   onProgress(0.05);
-
-  // Write input video
-  const inputName = 'input.' + videoFile.name.split('.').pop();
+  const ext = (videoFile.name.split('.').pop() || 'mp4').toLowerCase();
+  const inputName = `input.${ext}`;
   ff.writeFile(inputName, await fetchFile(videoFile));
 
-  // Probe video duration using ffprobe-like trick: run ffmpeg with -t 0
-  onStatus('分析视频时长...');
-  const duration = await probeDuration(ff, inputName);
-  onStatus(`视频时长: ${duration.toFixed(1)}s，计算定格点...`);
+  // ── Probe video ──────────────────────────────────────────
+  onStatus('分析视频…');
+  const { duration, width: srcW, height: srcH, hasAudio } = await probeMedia(ff, inputName);
+  onStatus(`${duration.toFixed(1)}s · ${srcW}×${srcH} · 音频:${hasAudio ? '✓' : '✗'}`);
   onProgress(0.08);
 
-  // Compute freeze points
-  const freezePoints = computeFreezePoints(duration, baseInterval);
-  onStatus(`将在 ${freezePoints.length} 处插入定格效果`);
-  onProgress(0.10);
-
-  // Fetch and write emoji + music assets
-  const usedEmojis = [];
-  const usedMusic = [];
-  const musicDurations = [];
-
-  for (let i = 0; i < freezePoints.length; i++) {
-    const emojiPath = emojiPaths[Math.floor(Math.random() * emojiPaths.length)];
-    const musicPath = musicPaths[Math.floor(Math.random() * musicPaths.length)];
-
-    const emojiName = `emoji_${i}.svg`;
-    const musicName = `music_${i}.wav`;
-
-    ff.writeFile(emojiName, await fetchFile(emojiPath));
-    ff.writeFile(musicName, await fetchFile(musicPath));
-
-    usedEmojis.push(emojiName);
-    usedMusic.push(musicName);
-
-    // Probe music duration
-    const md = await probeAudioDuration(ff, musicName);
-    musicDurations.push(md);
-  }
-
-  onProgress(0.12);
-
-  // Determine output dimensions
-  const { w: srcW, h: srcH } = await probeVideoDimensions(ff, inputName);
+  // ── Output dimensions ────────────────────────────────────
   let outW, outH;
   if (keepRatio) {
-    // keep original, ensure even dimensions
     outW = srcW % 2 === 0 ? srcW : srcW - 1;
     outH = srcH % 2 === 0 ? srcH : srcH - 1;
   } else {
-    // 9:16 output — pick a height that keeps it reasonable
-    outH = srcH >= srcW ? Math.min(srcH, 1280) : 1280;
-    if (outH % 2 !== 0) outH -= 1;
+    // Default: 9:16 portrait
+    outH = Math.min(Math.max(srcH, srcW), 1280); // cap at 1280
+    if (outH % 2 !== 0) outH--;
     outW = Math.round(outH * 9 / 16);
-    if (outW % 2 !== 0) outW -= 1;
+    if (outW % 2 !== 0) outW--;
   }
 
-  onStatus('构建视频片段...');
+  // ── Freeze points ────────────────────────────────────────
+  const freezePts = computeFreezePoints(duration, baseInterval);
+  onStatus(`${freezePts.length} 处定格效果`);
+  onProgress(0.10);
 
-  /**
-   * We'll build segments:
-   *   [normal_0] [freeze_0] [normal_1] [freeze_1] ... [normal_N]
-   * Then concat them.
-   */
+  // ── Fetch emoji + music assets ───────────────────────────
+  const emojiFiles = [];
+  const musicFiles = [];
+  const musicDurs  = [];
 
-  // Build timeline of segments
-  // freezePoints are the START times where freeze begins
+  for (let i = 0; i < freezePts.length; i++) {
+    const ep = emojiPaths[Math.floor(Math.random() * emojiPaths.length)];
+    const mp = musicPaths[Math.floor(Math.random() * musicPaths.length)];
+    const en = `emoji_${i}.png`;
+    const mn = `music_${i}.wav`;
+    ff.writeFile(en, await fetchFile(ep));
+    ff.writeFile(mn, await fetchFile(mp));
+    emojiFiles.push(en);
+    musicFiles.push(mn);
+    musicDurs.push(await probeAudioDuration(ff, mn));
+  }
+  onProgress(0.13);
+
+  // ── Build timeline ───────────────────────────────────────
   const segments = [];
   let cursor = 0;
-
-  for (let i = 0; i < freezePoints.length; i++) {
-    const freezeStart = freezePoints[i];
-    const freezeDur = musicDurations[i];
-
-    // Normal segment before this freeze
-    if (freezeStart > cursor + 0.05) {
-      segments.push({ type: 'normal', start: cursor, duration: freezeStart - cursor });
+  for (let i = 0; i < freezePts.length; i++) {
+    const ft = freezePts[i];
+    const fd = musicDurs[i];
+    if (ft > cursor + 0.05) {
+      segments.push({ type: 'normal', start: cursor, duration: ft - cursor });
     }
-
-    // Freeze segment
-    segments.push({
-      type: 'freeze',
-      start: freezeStart,
-      duration: freezeDur,
-      freezeAt: freezeStart,
-      emoji: usedEmojis[i],
-      music: usedMusic[i],
-    });
-
-    cursor = freezeStart + freezeDur;
+    segments.push({ type: 'freeze', freezeAt: ft, duration: fd,
+                    emoji: emojiFiles[i], music: musicFiles[i],
+                    frameFile: `frame_${i}.png` });
+    cursor = ft + fd;
   }
-
-  // Final normal segment
   if (cursor < duration - 0.05) {
     segments.push({ type: 'normal', start: cursor, duration: duration - cursor });
   }
 
-  // Process each segment
-  const segmentFiles = [];
-
-  for (let si = 0; si < segments.length; si++) {
-    const seg = segments[si];
-    const outFile = `seg_${si}.mp4`;
-    onStatus(`处理片段 ${si + 1}/${segments.length}...`);
-
+  // ── Encode each segment ──────────────────────────────────
+  const segFiles = [];
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    const out = `seg_${i}.mp4`;
+    onStatus(`编码片段 ${i + 1}/${segments.length}…`);
     if (seg.type === 'normal') {
-      await processNormalSegment(ff, inputName, seg, outFile, outW, outH, keepRatio, srcW, srcH);
+      await encodeNormal(ff, inputName, seg, out, outW, outH, keepRatio, srcW, srcH, hasAudio);
     } else {
-      await processFreezeSegment(ff, inputName, seg, outFile, outW, outH, keepRatio, srcW, srcH);
+      // Extract freeze frame from source video
+      await execFF(ff, [
+        '-ss', String(seg.freezeAt),
+        '-i', inputName,
+        '-vframes', '1',
+        '-f', 'image2',
+        seg.frameFile,
+      ]);
+      await encodeFreeze(ff, seg, out, outW, outH, keepRatio, srcW, srcH);
+      try { ff.deleteFile(seg.frameFile); } catch (_) {}
     }
-
-    segmentFiles.push(outFile);
-    onProgress(0.12 + (si / segments.length) * 0.75);
+    segFiles.push(out);
+    onProgress(0.13 + (i + 1) / segments.length * 0.76);
   }
 
-  // Concat all segments
-  onStatus('拼接所有片段...');
-  onProgress(0.90);
+  // ── Concat ───────────────────────────────────────────────
+  onStatus('拼接所有片段…');
+  ff.writeFile('concat.txt', segFiles.map(f => `file '${f}'`).join('\n'));
 
-  const concatListContent = segmentFiles.map(f => `file '${f}'`).join('\n');
-  ff.writeFile('concat_list.txt', concatListContent);
-
-  await ff.exec([
-    '-f', 'concat',
-    '-safe', '0',
-    '-i', 'concat_list.txt',
+  await execFF(ff, [
+    '-f', 'concat', '-safe', '0', '-i', 'concat.txt',
     '-c', 'copy',
+    '-movflags', '+faststart',
     'output.mp4',
   ]);
 
-  onStatus('读取输出文件...');
+  // ── Read result ──────────────────────────────────────────
+  onStatus('读取输出…');
   onProgress(0.97);
-
   const data = await ff.readFile('output.mp4');
   const blob = new Blob([data.buffer], { type: 'video/mp4' });
 
-  onStatus('完成！');
+  // Cleanup virtual FS
+  const frameFiles = segments.filter(s => s.type === 'freeze').map(s => s.frameFile);
+  const toDelete = [inputName, 'concat.txt', 'output.mp4', ...segFiles, ...emojiFiles, ...musicFiles, ...frameFiles];
+  for (const f of toDelete) { try { ff.deleteFile(f); } catch (_) {} }
+
+  onStatus('✅ 完成！');
   onProgress(1.0);
-
-  // Cleanup
-  try {
-    ff.deleteFile(inputName);
-    ff.deleteFile('concat_list.txt');
-    ff.deleteFile('output.mp4');
-    for (const f of segmentFiles) ff.deleteFile(f);
-    for (const e of usedEmojis) ff.deleteFile(e);
-    for (const m of usedMusic) ff.deleteFile(m);
-  } catch (_) { /* best effort */ }
-
   return blob;
 }
 
-// ── Helpers ────────────────────────────────────────────────
+// ── Segment encoders ──────────────────────────────────────
 
-/**
- * Compute freeze point timestamps using base interval + random jitter.
- */
-function computeFreezePoints(duration, baseInterval) {
-  const MIN_GAP = 3;
-  const START_MARGIN = duration * 0.10;
-  const END_MARGIN = duration * 0.10;
-  const JITTER = 1.5;
+async function encodeNormal(ff, inputName, seg, outFile, outW, outH, keepRatio, srcW, srcH, hasAudio) {
+  const needsBlur = !keepRatio && Math.abs(srcW / srcH - outW / outH) > 0.05;
+  const dur = seg.duration.toFixed(6);
 
-  const points = [];
-  let t = START_MARGIN + baseInterval * 0.5 + (Math.random() - 0.5) * JITTER * 2;
+  if (!needsBlur) {
+    // Simple -vf path (no complex filter needed)
+    const vf = keepRatio
+      ? `scale=${outW}:${outH}:force_original_aspect_ratio=decrease,pad=${outW}:${outH}:(ow-iw)/2:(oh-ih)/2:black`
+      : `scale=${outW}:${outH}`;
 
-  while (t < duration - END_MARGIN) {
-    if (points.length === 0 || t - points[points.length - 1] >= MIN_GAP) {
-      points.push(parseFloat(t.toFixed(3)));
-    }
-    t += baseInterval + (Math.random() - 0.5) * JITTER * 2;
+    const args = [
+      '-ss', String(seg.start), '-t', dur,
+      '-i', inputName,
+      ...(hasAudio ? [] : ['-f', 'lavfi', '-t', dur, '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100']),
+      '-vf', vf,
+      '-map', '0:v:0',
+      '-map', hasAudio ? '0:a:0' : '1:a:0',
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
+      '-c:a', 'aac', '-b:a', '128k',
+      '-r', '30', '-ar', '44100', '-ac', '2',
+      '-pix_fmt', 'yuv420p',
+      '-t', dur,
+      outFile,
+    ];
+    await execFF(ff, args);
+    return;
   }
 
-  return points;
-}
+  // Landscape → portrait: blur background via filter_complex
+  const fc = [
+    `[0:v]split[bg][fg]`,
+    `[bg]scale=${outW}:${outH}:force_original_aspect_ratio=increase,crop=${outW}:${outH},boxblur=20:1[blurred]`,
+    `[fg]scale=${outW}:${outH}:force_original_aspect_ratio=decrease[fgsc]`,
+    `[blurred][fgsc]overlay=(W-w)/2:(H-h)/2[vout]`,
+  ].join(';');
 
-/**
- * Build the scale/pad filter for output dimensions.
- * For 9:16 with blurred background: scale original to fit, then overlay on blurred fill.
- */
-function buildScaleFilter(outW, outH, keepRatio, srcW, srcH, inputLabel = '[0:v]') {
-  if (keepRatio) {
-    // Just scale to outW x outH, keeping aspect ratio with black bars
-    return `${inputLabel}scale=${outW}:${outH}:force_original_aspect_ratio=decrease,pad=${outW}:${outH}:(ow-iw)/2:(oh-ih)/2:black[scaled]`;
-  }
+  const audioInputs = hasAudio ? [] : ['-f', 'lavfi', '-t', dur, '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100'];
+  const audioMap = hasAudio ? ['0:a:0'] : ['1:a:0'];
 
-  // 9:16: blur fill + centered original
-  const srcAR = srcW / srcH;
-  const dstAR = outW / outH;
-
-  if (Math.abs(srcAR - dstAR) < 0.05) {
-    // Already roughly 9:16
-    return `${inputLabel}scale=${outW}:${outH}[scaled]`;
-  }
-
-  // blur background: scale to fill entire outW x outH
-  // foreground: scale to fit inside outW x outH
-  return (
-    `${inputLabel}split[bg][fg];` +
-    `[bg]scale=${outW}:${outH}:force_original_aspect_ratio=increase,crop=${outW}:${outH},boxblur=20:1[blurred];` +
-    `[fg]scale=${outW}:${outH}:force_original_aspect_ratio=decrease[fgscaled];` +
-    `[blurred][fgscaled]overlay=(W-w)/2:(H-h)/2[scaled]`
-  );
-}
-
-/**
- * Build overlay filter for emoji — centered-bottom, 33% of frame height.
- */
-function buildEmojiOverlay(outW, outH, emojiLabel, videoLabel) {
-  const emojiH = Math.round(outH * 0.33);
-  const emojiW = emojiH; // square emoji
-  return (
-    `${emojiLabel}scale=${emojiW}:${emojiH}[emojiscaled];` +
-    `${videoLabel}[emojiscaled]overlay=(W-w)/2:H-h-${Math.round(outH * 0.05)}[withemoji]`
-  );
-}
-
-async function processNormalSegment(ff, inputName, seg, outFile, outW, outH, keepRatio, srcW, srcH) {
-  const scaleFilter = buildScaleFilter(outW, outH, keepRatio, srcW, srcH, '[0:v]');
-
-  await ff.exec([
-    '-ss', String(seg.start),
-    '-t', String(seg.duration),
+  await execFF(ff, [
+    '-ss', String(seg.start), '-t', dur,
     '-i', inputName,
-    '-filter_complex', `${scaleFilter}`,
-    '-map', '[scaled]',
-    '-map', '0:a',
-    '-c:v', 'libx264',
-    '-preset', 'ultrafast',
-    '-crf', '23',
-    '-c:a', 'aac',
-    '-b:a', '128k',
-    '-r', '30',
-    '-ar', '44100',
+    ...audioInputs,
+    '-filter_complex', fc,
+    '-map', '[vout]', '-map', ...audioMap,
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
+    '-c:a', 'aac', '-b:a', '128k',
+    '-r', '30', '-ar', '44100', '-ac', '2',
+    '-pix_fmt', 'yuv420p',
+    '-t', dur,
     outFile,
   ]);
 }
 
-async function processFreezeSegment(ff, inputName, seg, outFile, outW, outH, keepRatio, srcW, srcH) {
-  /**
-   * Freeze effect:
-   * 1. Extract a single frame at seg.freezeAt (as PNG)
-   * 2. Create a looped still video of that frame for seg.duration seconds
-   * 3. Apply grayscale + emoji overlay
-   * 4. Use the phonk music audio (replacing original video audio)
-   */
+async function encodeFreeze(ff, seg, outFile, outW, outH, keepRatio, srcW, srcH) {
+  // The frame was extracted just before this call (stored as seg.frameFile)
+  const frameFile = seg.frameFile;
+  const dur = seg.duration.toFixed(6);
 
-  const frameFile = outFile + '_frame.png';
-
-  // Step 1: Extract the freeze frame
-  await ff.exec([
-    '-ss', String(seg.freezeAt),
-    '-i', inputName,
-    '-vframes', '1',
-    '-q:v', '2',
-    frameFile,
-  ]);
-
-  // Step 2: Build freeze segment with grayscale + emoji overlay + phonk audio
-  // Input 0: looped still frame (via loop filter)
-  // Input 1: emoji image
-  // Input 2: phonk music audio
-  const emojiH = Math.round(outH * 0.33);
-  const emojiW = emojiH;
-  const emojiY = outH - emojiH - Math.round(outH * 0.05);
-  const emojiX = Math.round((outW - emojiW) / 2);
+  const emojiSz = Math.round(outH * 0.33);
+  const emojiX  = Math.round((outW - emojiSz) / 2);
+  const emojiY  = outH - emojiSz - Math.round(outH * 0.05);
 
   // Scale filter for the still frame
-  let scaleExpr;
+  let frameScale;
+  const needsBlur = !keepRatio && Math.abs(srcW / srcH - outW / outH) > 0.05;
   if (keepRatio) {
-    scaleExpr = `[0:v]scale=${outW}:${outH}:force_original_aspect_ratio=decrease,pad=${outW}:${outH}:(ow-iw)/2:(oh-ih)/2:black`;
+    frameScale = `[0:v]scale=${outW}:${outH}:force_original_aspect_ratio=decrease,pad=${outW}:${outH}:(ow-iw)/2:(oh-ih)/2:black[framefill]`;
+  } else if (!needsBlur) {
+    frameScale = `[0:v]scale=${outW}:${outH}[framefill]`;
   } else {
-    const srcAR = srcW / srcH;
-    const dstAR = outW / outH;
-    if (Math.abs(srcAR - dstAR) < 0.05) {
-      scaleExpr = `[0:v]scale=${outW}:${outH}`;
-    } else {
-      scaleExpr = (
-        `[0:v]split[bg][fg];` +
-        `[bg]scale=${outW}:${outH}:force_original_aspect_ratio=increase,crop=${outW}:${outH},boxblur=20:1[blurred];` +
-        `[fg]scale=${outW}:${outH}:force_original_aspect_ratio=decrease[fgscaled];` +
-        `[blurred][fgscaled]overlay=(W-w)/2:(H-h)/2`
-      );
-    }
+    frameScale = [
+      `[0:v]split[bg][fg]`,
+      `[bg]scale=${outW}:${outH}:force_original_aspect_ratio=increase,crop=${outW}:${outH},boxblur=20:1[blurred]`,
+      `[fg]scale=${outW}:${outH}:force_original_aspect_ratio=decrease[fgsc]`,
+      `[blurred][fgsc]overlay=(W-w)/2:(H-h)/2[framefill]`,
+    ].join(';');
   }
 
-  const filterComplex = (
-    `${scaleExpr}[framescaled];` +
-    `[framescaled]hue=s=0[bw];` +
-    `[1:v]scale=${emojiW}:${emojiH}[emojis];` +
-    `[bw][emojis]overlay=${emojiX}:${emojiY}[out]`
-  );
+  const fc = [
+    frameScale,
+    `[framefill]hue=s=0[bw]`,
+    `[1:v]scale=${emojiSz}:${emojiSz}[em]`,
+    `[bw][em]overlay=${emojiX}:${emojiY}[vout]`,
+  ].join(';');
 
-  await ff.exec([
-    '-loop', '1',
-    '-i', frameFile,
-    '-i', seg.emoji,
-    '-i', seg.music,
-    '-filter_complex', filterComplex,
-    '-map', '[out]',
-    '-map', '2:a',
-    '-t', String(seg.duration),
-    '-c:v', 'libx264',
-    '-preset', 'ultrafast',
-    '-crf', '23',
-    '-c:a', 'aac',
-    '-b:a', '128k',
-    '-r', '30',
-    '-ar', '44100',
+  await execFF(ff, [
+    '-loop', '1', '-i', frameFile,   // 0: looped still frame
+    '-i', seg.emoji,                  // 1: emoji PNG
+    '-i', seg.music,                  // 2: phonk audio
+    '-filter_complex', fc,
+    '-map', '[vout]',
+    '-map', '2:a:0',
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
+    '-c:a', 'aac', '-b:a', '128k',
+    '-r', '30', '-ar', '44100', '-ac', '2',
+    '-pix_fmt', 'yuv420p',
+    '-t', dur,
     '-shortest',
     outFile,
   ]);
-
-  try { ff.deleteFile(frameFile); } catch (_) {}
 }
 
-async function probeDuration(ff, filename) {
-  // Run ffmpeg to stderr-only, read the Duration line
-  // We use a trick: try to encode 0 frames and capture log output
-  let durationSec = 30; // fallback
+// ── Freeze points ─────────────────────────────────────────
 
-  ff.on('log', ({ message }) => {
-    const m = message.match(/Duration:\s*(\d+):(\d+):([\d.]+)/);
-    if (m) {
-      durationSec = parseInt(m[1]) * 3600 + parseInt(m[2]) * 60 + parseFloat(m[3]);
+function computeFreezePoints(duration, baseInterval) {
+  const MIN_GAP = 3;
+  const margin  = duration * 0.10;
+  const jitter  = Math.min(1.5, baseInterval * 0.25);
+  const points  = [];
+
+  let t = margin + baseInterval * 0.5 + (Math.random() - 0.5) * jitter * 2;
+  while (t < duration - margin) {
+    const last = points[points.length - 1] ?? -Infinity;
+    if (t - last >= MIN_GAP) points.push(parseFloat(t.toFixed(3)));
+    t += baseInterval + (Math.random() - 0.5) * jitter * 2;
+  }
+  return points;
+}
+
+// ── Probing helpers ───────────────────────────────────────
+
+async function probeMedia(ff, filename) {
+  const info = { duration: 30, width: 1080, height: 1920, hasAudio: false };
+
+  const handler = ({ message }) => {
+    const dm = message.match(/Duration:\s*(\d+):(\d+):([\d.]+)/);
+    if (dm) info.duration = +dm[1] * 3600 + +dm[2] * 60 + parseFloat(dm[3]);
+
+    // Match dimension in "Video: codec ..., WxH" lines
+    const vm = message.match(/Video:.*?(\d{2,5})x(\d{2,5})/);
+    if (vm) {
+      const w = parseInt(vm[1]), h = parseInt(vm[2]);
+      if (w > 100 && h > 100) { info.width = w; info.height = h; }
     }
-  });
 
-  try {
-    await ff.exec(['-i', filename, '-t', '0', '-f', 'null', '-']);
-  } catch (_) { /* expected to "fail" since output is /dev/null */ }
+    if (/Audio:/.test(message)) info.hasAudio = true;
+  };
 
-  return durationSec;
+  ff.on('log', handler);
+  try { await ff.exec(['-i', filename, '-t', '0', '-f', 'null', '-']); } catch (_) {}
+  ff.off('log', handler);
+  return info;
 }
 
 async function probeAudioDuration(ff, filename) {
   let dur = 2.0;
   const handler = ({ message }) => {
     const m = message.match(/Duration:\s*(\d+):(\d+):([\d.]+)/);
-    if (m) {
-      dur = parseInt(m[1]) * 3600 + parseInt(m[2]) * 60 + parseFloat(m[3]);
-    }
+    if (m) dur = +m[1] * 3600 + +m[2] * 60 + parseFloat(m[3]);
   };
   ff.on('log', handler);
-  try {
-    await ff.exec(['-i', filename, '-t', '0', '-f', 'null', '-']);
-  } catch (_) {}
+  try { await ff.exec(['-i', filename, '-t', '0', '-f', 'null', '-']); } catch (_) {}
   ff.off('log', handler);
   return dur;
-}
-
-async function probeVideoDimensions(ff, filename) {
-  let w = 1080, h = 1920;
-  const handler = ({ message }) => {
-    const m = message.match(/(\d{2,5})x(\d{2,5})/);
-    if (m) {
-      const pw = parseInt(m[1]);
-      const ph = parseInt(m[2]);
-      // Sanity check: ignore tiny thumbnail dimensions
-      if (pw > 100 && ph > 100) { w = pw; h = ph; }
-    }
-  };
-  ff.on('log', handler);
-  try {
-    await ff.exec(['-i', filename, '-t', '0', '-f', 'null', '-']);
-  } catch (_) {}
-  ff.off('log', handler);
-  return { w, h };
 }
