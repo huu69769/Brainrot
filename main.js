@@ -146,6 +146,9 @@ function triggerJumpscare(onDone) {
   jumpscareEl.classList.add('active');
   document.body.classList.add('grayscale-shock');
 
+  // Pause BGM during jumpscare
+  if (bgmAudio && !bgmAudio.paused) bgmAudio.pause();
+
   // Play phonk
   jumpscareAudio = new Audio(musicSrc);
   jumpscareAudio.volume = 0.85;
@@ -159,6 +162,8 @@ function triggerJumpscare(onDone) {
     jumpscareEl.classList.remove('active');
     document.body.classList.remove('grayscale-shock');
     jumpscareAudio = null;
+    // Resume BGM if not manually muted
+    if (bgmAudio && !bgmAudio.muted) bgmAudio.play().catch(() => {});
     onDone && onDone();
   }
 }
