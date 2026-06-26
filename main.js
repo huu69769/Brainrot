@@ -239,6 +239,18 @@ function setStatus(msg) {
   statusText.textContent = msg;
 }
 
+// ── Preview video BGM control ─────────────────────────────
+
+previewVideo.addEventListener('play', () => {
+  if (bgmAudio && !bgmAudio.paused) bgmAudio.pause();
+});
+previewVideo.addEventListener('pause', () => {
+  if (bgmAudio && !bgmAudio.muted) bgmAudio.play().catch(() => {});
+});
+previewVideo.addEventListener('ended', () => {
+  if (bgmAudio && !bgmAudio.muted) bgmAudio.play().catch(() => {});
+});
+
 // ── Download button ───────────────────────────────────────
 
 downloadBtn.addEventListener('click', () => {
