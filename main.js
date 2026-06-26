@@ -174,14 +174,12 @@ uploadBtn.addEventListener('click', () => {
   if (isProcessing) return;
   playSfx('click');
 
-  const roll = Math.random();
-  if (roll < 0.70 && EMOJIS.length > 0 && MUSIC.length > 0) {
-    // 70% → jumpscare first, then open file picker
-    triggerJumpscare(() => {
-      fileInput.click();
-    });
-  } else {
-    fileInput.click();
+  // Open file picker immediately (mobile requires it in the same gesture)
+  fileInput.click();
+
+  // 70% chance of jumpscare in parallel (does NOT block file picker)
+  if (Math.random() < 0.70) {
+    triggerJumpscare(null);
   }
 });
 
