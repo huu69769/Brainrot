@@ -114,21 +114,21 @@ export async function processVideo(videoFile, emojiPaths, musicPaths, opts = {})
   const jitter     = Math.min(1.5, baseInterval * 0.25);
 
   const segments = [];
-  let cursor = 0;       // 当前写入到的时间点（含已写入的冻帧）
-  let slotIdx = 0;      // 用第几个素材槽
+  let videoPos = 0;   // 原视频已处理到的位置（不含冻帧插入的时间）
+  let slotIdx = 0;    // 用第几个素材槽
 
-  // 第一个定格点：从开头留白后开始
+  // 第一个定格点：从开头留白后开始（以原视频时间计）
   let nextFreeze = margin + baseInterval * 0.5 + (Math.random() - 0.5) * jitter * 2;
 
   while (nextFreeze < duration - margin && slotIdx < MAX_SLOTS) {
     const fd = musicDurs[slotIdx];
 
-    // 正常片段：cursor → nextFreeze
-    if (nextFreeze > cursor + 0.05) {
-      segments.push({ type: 'normal', start: cursor, duration: nextFreeze - cursor });
+    // 正常片段：原视频 videoPos → nextFreeze
+    if (nextFreeze > videoPos + 0.05) {
+      segments.push({ type: 'normal', start: videoPos, duration: nextFreeze - videoPos });
     }
 
-    // 定格片段
+    // 定格片段：冻住 nextFreeze 那一帧，插入 fd 秒
     segments.push({
       type: 'freeze',
       freezeAt: nextFreeze,
@@ -138,19 +138,18 @@ export async function processVideo(videoFile, emojiPaths, musicPaths, opts = {})
       frameFile: `frame_${slotIdx}.png`,
     });
 
-    cursor = nextFreeze + fd;
+    // 定格结束后，原视频从 nextFreeze 继续（不跳过任何内容）
+    videoPos = nextFreeze;
     slotIdx++;
 
-    // 下一个定格点：从这段音乐结束后再等 baseInterval ± jitter
-    nextFreeze = cursor + baseInterval + (Math.random() - 0.5) * jitter * 2;
-
-    // 保证两个定格点之间的正常画面至少 MIN_GAP 秒
-    if (nextFreeze - cursor < MIN_GAP) nextFreeze = cursor + MIN_GAP;
+    // 下一个定格点：从 nextFreeze 再往后等 baseInterval ± jitter
+    nextFreeze = videoPos + baseInterval + (Math.random() - 0.5) * jitter * 2;
+    if (nextFreeze - videoPos < MIN_GAP) nextFreeze = videoPos + MIN_GAP;
   }
 
-  // 最后一段正常画面
-  if (cursor < duration - 0.05) {
-    segments.push({ type: 'normal', start: cursor, duration: duration - cursor });
+  // 最后一段正常画面：原视频 videoPos → 结尾
+  if (videoPos < duration - 0.05) {
+    segments.push({ type: 'normal', start: videoPos, duration: duration - videoPos });
   }
 
   onStatus(`${slotIdx} 处定格效果`);
