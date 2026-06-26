@@ -1,0 +1,377 @@
+/* ============================================================
+   PHONK MEME MACHINE — Brainrot / 神人TV Aesthetic
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Bebas+Neue&display=swap');
+
+:root {
+  --bg: #0a0a0f;
+  --surface: #111118;
+  --accent1: #ff2d55;
+  --accent2: #00f5ff;
+  --accent3: #ffe500;
+  --accent4: #bf00ff;
+  --text: #f0f0f0;
+  --text-dim: #888;
+  --border: #2a2a3a;
+  --radius: 8px;
+  --gap: 1.5rem;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Bebas Neue', 'Arial Black', sans-serif;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  /* Scanline overlay for that cheap CRT feel */
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.25) 2px,
+      rgba(0,0,0,0.25) 4px
+    );
+}
+
+/* ── Decor layer ── */
+#decor-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+#decor-layer img {
+  position: absolute;
+  opacity: 0.18;
+  max-width: 120px;
+  filter: saturate(3) hue-rotate(var(--hr, 0deg));
+  animation: floatDecor var(--dur, 8s) ease-in-out infinite alternate;
+}
+@keyframes floatDecor {
+  from { transform: translateY(0) rotate(var(--rot0, -5deg)); }
+  to   { transform: translateY(-18px) rotate(var(--rot1, 5deg)); }
+}
+
+/* ── Jump-scare overlay ── */
+#jumpscare {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.92);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.05s;
+}
+#jumpscare.active {
+  opacity: 1;
+  pointer-events: all;
+}
+body.grayscale-shock {
+  filter: grayscale(1) contrast(1.4) brightness(0.85);
+}
+#jumpscare img {
+  width: min(75vw, 75vh);
+  height: min(75vw, 75vh);
+  object-fit: contain;
+  animation: scareScale 0.08s ease-out;
+}
+@keyframes scareScale {
+  from { transform: scale(0.5); }
+  to   { transform: scale(1); }
+}
+
+/* ── App shell ── */
+#app {
+  position: relative;
+  z-index: 1;
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+
+/* ── Header ── */
+header { text-align: center; }
+
+.title {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.3em;
+  line-height: 1;
+}
+.title-phonk {
+  font-family: 'Black Ops One', cursive;
+  font-size: clamp(2.8rem, 12vw, 5.5rem);
+  color: var(--accent1);
+  text-shadow:
+    3px 3px 0 #000,
+    0 0 30px var(--accent1);
+  transform: skewX(-6deg);
+  display: inline-block;
+}
+.title-meme {
+  font-family: 'Black Ops One', cursive;
+  font-size: clamp(2.8rem, 12vw, 5.5rem);
+  color: var(--accent2);
+  text-shadow:
+    -3px 3px 0 #000,
+    0 0 30px var(--accent2);
+  transform: skewX(4deg) rotate(-2deg);
+  display: inline-block;
+}
+.title-machine {
+  font-family: 'Black Ops One', cursive;
+  font-size: clamp(2.2rem, 9vw, 4rem);
+  color: var(--accent3);
+  text-shadow: 2px 2px 0 #000, 0 0 20px var(--accent3);
+  transform: skewX(-3deg);
+  display: inline-block;
+  width: 100%;
+}
+
+.subtitle {
+  font-size: clamp(1rem, 4vw, 1.4rem);
+  color: var(--text-dim);
+  letter-spacing: 0.05em;
+  margin-top: 0.4rem;
+  font-family: 'Bebas Neue', sans-serif;
+}
+
+/* ── Controls ── */
+.controls-section {
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.4rem;
+  box-shadow: 0 0 24px rgba(255,45,85,0.12);
+}
+
+.control-group { display: flex; flex-direction: column; gap: 0.6rem; }
+
+/* Upload button */
+.btn-upload {
+  width: 100%;
+  padding: 1rem 1.5rem;
+  font-family: 'Black Ops One', cursive;
+  font-size: clamp(1.2rem, 5vw, 1.6rem);
+  background: linear-gradient(135deg, var(--accent1), var(--accent4));
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  letter-spacing: 0.08em;
+  text-shadow: 1px 1px 0 rgba(0,0,0,0.5);
+  box-shadow:
+    0 4px 0 rgba(0,0,0,0.4),
+    0 0 30px rgba(255,45,85,0.4);
+  transition: transform 0.08s, box-shadow 0.08s;
+  min-height: 56px;
+  touch-action: manipulation;
+}
+.btn-upload:hover {
+  transform: translateY(-2px) skewX(-2deg);
+  box-shadow:
+    0 6px 0 rgba(0,0,0,0.4),
+    0 0 50px rgba(255,45,85,0.6);
+}
+.btn-upload:active {
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 rgba(0,0,0,0.4);
+}
+.btn-upload:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Slider */
+.ctrl-label {
+  font-size: clamp(1rem, 4vw, 1.2rem);
+  color: var(--accent2);
+  letter-spacing: 0.1em;
+}
+.slider-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+.slider-hint {
+  font-size: 0.9rem;
+  color: var(--text-dim);
+  min-width: 1.5rem;
+}
+#freq-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(to right, var(--accent1), var(--accent2));
+  outline: none;
+  min-height: 44px;
+  cursor: pointer;
+}
+#freq-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent3);
+  border: 3px solid #000;
+  box-shadow: 0 0 10px var(--accent3);
+  cursor: pointer;
+}
+#freq-slider::-moz-range-thumb {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent3);
+  border: 3px solid #000;
+  box-shadow: 0 0 10px var(--accent3);
+  cursor: pointer;
+}
+.slider-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  padding: 0 0.2rem;
+}
+
+/* Checkbox */
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  font-size: clamp(0.95rem, 3.5vw, 1.1rem);
+  cursor: pointer;
+  min-height: 44px;
+  color: var(--text);
+}
+.checkbox-label input[type="checkbox"] {
+  width: 22px;
+  height: 22px;
+  accent-color: var(--accent2);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* ── Progress / Status ── */
+.status-section {
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.2rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+.progress-bar-wrap {
+  height: 12px;
+  background: #222;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.progress-bar {
+  height: 100%;
+  width: 0%;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--accent1), var(--accent2), var(--accent3));
+  background-size: 200% 100%;
+  animation: progressShimmer 1.5s linear infinite;
+  transition: width 0.3s ease;
+}
+@keyframes progressShimmer {
+  0%   { background-position: 0% 0%; }
+  100% { background-position: 200% 0%; }
+}
+.status-text {
+  font-size: clamp(0.9rem, 3.5vw, 1.1rem);
+  color: var(--accent2);
+  letter-spacing: 0.06em;
+}
+
+/* ── Result section ── */
+.result-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.2rem;
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.2rem;
+  box-shadow: 0 0 24px rgba(0,245,255,0.1);
+}
+#preview-video {
+  width: 100%;
+  max-height: 60vh;
+  border-radius: var(--radius);
+  background: #000;
+  display: block;
+}
+
+.btn-download {
+  width: 100%;
+  padding: 1rem 1.5rem;
+  font-family: 'Black Ops One', cursive;
+  font-size: clamp(1.2rem, 5vw, 1.6rem);
+  background: linear-gradient(135deg, var(--accent2), #005f7f);
+  color: #000;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  letter-spacing: 0.08em;
+  box-shadow:
+    0 4px 0 rgba(0,0,0,0.4),
+    0 0 30px rgba(0,245,255,0.35);
+  transition: transform 0.08s, box-shadow 0.08s;
+  min-height: 56px;
+  touch-action: manipulation;
+}
+.btn-download:hover {
+  transform: translateY(-2px) skewX(2deg);
+  box-shadow:
+    0 6px 0 rgba(0,0,0,0.4),
+    0 0 50px rgba(0,245,255,0.55);
+}
+.btn-download:active { transform: translateY(2px); }
+
+/* ── Footer ── */
+footer {
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  letter-spacing: 0.08em;
+  padding-top: 0.5rem;
+}
+
+/* ── Utility ── */
+.hidden { display: none !important; }
+
+/* ── Responsive tweaks ── */
+@media (max-width: 400px) {
+  #app { padding: 1rem 0.75rem 2.5rem; }
+  .controls-section { padding: 1rem; }
+}
+
+@media (min-width: 640px) {
+  #app { padding: 2rem 1.5rem 4rem; }
+}

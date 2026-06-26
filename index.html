@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PHONK MEME MACHINE 💀</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Brainrot decor layer (populated from assets/decor/ by JS) -->
+  <div id="decor-layer" aria-hidden="true"></div>
+
+  <!-- Jump-scare overlay -->
+  <div id="jumpscare" aria-hidden="true">
+    <img id="jumpscare-img" src="" alt="" />
+  </div>
+
+  <div id="app">
+    <header>
+      <h1 class="title">
+        <span class="title-phonk">PHONK</span>
+        <span class="title-meme">MEME</span>
+        <span class="title-machine">MACHINE</span>
+      </h1>
+      <p class="subtitle">把你的视频整成梗视频 💀🗿</p>
+    </header>
+
+    <main>
+      <!-- Controls -->
+      <section class="controls-section">
+        <!-- Upload -->
+        <div class="control-group">
+          <button id="upload-btn" class="btn-upload" type="button">
+            📁 上传视频
+          </button>
+          <input id="file-input" type="file" accept="video/*" hidden />
+        </div>
+
+        <!-- Frequency slider -->
+        <div class="control-group">
+          <label for="freq-slider" class="ctrl-label">💥 梗的密度</label>
+          <div class="slider-wrap">
+            <span class="slider-hint">疏</span>
+            <input id="freq-slider" type="range" min="0" max="2" step="1" value="1" />
+            <span class="slider-hint">密</span>
+          </div>
+          <div class="slider-labels" aria-hidden="true">
+            <span>疏 (~8s)</span>
+            <span>适中 (~6s)</span>
+            <span>密 (~4s)</span>
+          </div>
+        </div>
+
+        <!-- Keep ratio checkbox -->
+        <div class="control-group">
+          <label class="checkbox-label">
+            <input id="keep-ratio" type="checkbox" />
+            <span class="checkmark"></span>
+            保持原始比例（不转 9:16）
+          </label>
+        </div>
+      </section>
+
+      <!-- Processing status -->
+      <section id="status-section" class="status-section hidden">
+        <div class="progress-bar-wrap">
+          <div id="progress-bar" class="progress-bar"></div>
+        </div>
+        <p id="status-text" class="status-text">准备中...</p>
+      </section>
+
+      <!-- Preview + download -->
+      <section id="result-section" class="result-section hidden">
+        <video id="preview-video" controls playsinline></video>
+        <button id="download-btn" class="btn-download" type="button">
+          ⬇️ 下载成品
+        </button>
+      </section>
+    </main>
+
+    <footer>
+      <p>纯前端 · 视频不上传服务器 · 本地处理</p>
+    </footer>
+  </div>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>
