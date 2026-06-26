@@ -266,7 +266,7 @@ async function encodeFreeze(ff, seg, outFile, outW, outH, keepRatio, srcW, srcH)
   const frameFile = seg.frameFile;
   const dur = seg.duration.toFixed(6);
 
-  const emojiSz = Math.round(outH * 0.33);
+  const emojiSz = Math.round(outH * 0.23);
   const emojiX  = Math.round((outW - emojiSz) / 2);
   const emojiY  = outH - emojiSz - Math.round(outH * 0.05);
 
