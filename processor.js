@@ -84,17 +84,17 @@ export async function processVideo(videoFile, emojiPaths, musicPaths, opts = {})
     if (outW % 2 !== 0) outW--;
   }
 
-  // ── Freeze points ────────────────────────────────────────
-  const freezePts = computeFreezePoints(duration, baseInterval);
-  onStatus(`${freezePts.length} 处定格效果`);
+  // ── 预先探测所有音乐时长，用于计算真实间隔 ─────────────────
+  onStatus('探测音乐时长…');
   onProgress(0.10);
 
-  // ── Fetch emoji + music assets ───────────────────────────
+  // 加载最多 8 段素材备用（足够覆盖任何长度视频）
+  const MAX_SLOTS = 8;
   const emojiFiles = [];
   const musicFiles = [];
   const musicDurs  = [];
 
-  for (let i = 0; i < freezePts.length; i++) {
+  for (let i = 0; i < MAX_SLOTS; i++) {
     const ep = emojiPaths[Math.floor(Math.random() * emojiPaths.length)];
     const mp = musicPaths[Math.floor(Math.random() * musicPaths.length)];
     const en = `emoji_${i}.png`;
@@ -107,23 +107,53 @@ export async function processVideo(videoFile, emojiPaths, musicPaths, opts = {})
   }
   onProgress(0.13);
 
-  // ── Build timeline ───────────────────────────────────────
+  // ── Build timeline（间隔从上一段音乐结束后开始计算）────────
+  // 间隔 = 音乐结束 → 下一个定格点，保证正常画面有足够呼吸感
+  const MIN_GAP   = 3;
+  const margin     = duration * 0.10;
+  const jitter     = Math.min(1.5, baseInterval * 0.25);
+
   const segments = [];
-  let cursor = 0;
-  for (let i = 0; i < freezePts.length; i++) {
-    const ft = freezePts[i];
-    const fd = musicDurs[i];
-    if (ft > cursor + 0.05) {
-      segments.push({ type: 'normal', start: cursor, duration: ft - cursor });
+  let cursor = 0;       // 当前写入到的时间点（含已写入的冻帧）
+  let slotIdx = 0;      // 用第几个素材槽
+
+  // 第一个定格点：从开头留白后开始
+  let nextFreeze = margin + baseInterval * 0.5 + (Math.random() - 0.5) * jitter * 2;
+
+  while (nextFreeze < duration - margin && slotIdx < MAX_SLOTS) {
+    const fd = musicDurs[slotIdx];
+
+    // 正常片段：cursor → nextFreeze
+    if (nextFreeze > cursor + 0.05) {
+      segments.push({ type: 'normal', start: cursor, duration: nextFreeze - cursor });
     }
-    segments.push({ type: 'freeze', freezeAt: ft, duration: fd,
-                    emoji: emojiFiles[i], music: musicFiles[i],
-                    frameFile: `frame_${i}.png` });
-    cursor = ft + fd;
+
+    // 定格片段
+    segments.push({
+      type: 'freeze',
+      freezeAt: nextFreeze,
+      duration: fd,
+      emoji: emojiFiles[slotIdx],
+      music: musicFiles[slotIdx],
+      frameFile: `frame_${slotIdx}.png`,
+    });
+
+    cursor = nextFreeze + fd;
+    slotIdx++;
+
+    // 下一个定格点：从这段音乐结束后再等 baseInterval ± jitter
+    nextFreeze = cursor + baseInterval + (Math.random() - 0.5) * jitter * 2;
+
+    // 保证两个定格点之间的正常画面至少 MIN_GAP 秒
+    if (nextFreeze - cursor < MIN_GAP) nextFreeze = cursor + MIN_GAP;
   }
+
+  // 最后一段正常画面
   if (cursor < duration - 0.05) {
     segments.push({ type: 'normal', start: cursor, duration: duration - cursor });
   }
+
+  onStatus(`${slotIdx} 处定格效果`);
 
   // ── Encode each segment ──────────────────────────────────
   const segFiles = [];
