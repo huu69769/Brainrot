@@ -262,8 +262,10 @@ downloadBtn.addEventListener('click', () => {
   const a = document.createElement('a');
   a.href = url;
   a.download = 'phonk_meme_' + Date.now() + '.mp4';
+  a.style.display = 'none';
+  document.body.appendChild(a);
   a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 5000);
 
   // 50% chance of jumpscare in parallel (does NOT block download)
   if (Math.random() < 0.50) {
