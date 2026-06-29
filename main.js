@@ -265,7 +265,7 @@ downloadBtn.addEventListener('click', () => {
   a.style.display = 'none';
   document.body.appendChild(a);
   a.click();
-  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 5000);
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 30000);
 
   // 50% chance of jumpscare in parallel (does NOT block download)
   if (Math.random() < 0.50) {
